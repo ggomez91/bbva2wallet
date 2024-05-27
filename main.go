@@ -5,6 +5,8 @@ import (
     "fmt"
     "log"
     "os"
+    "strings"
+
     "github.com/xuri/excelize/v2"
 )
 
@@ -38,11 +40,11 @@ func main() {
     csvWriter := csv.NewWriter(csvFile)
     defer csvWriter.Flush()
 
-    // Process and write the rows
+    // Process and write the rows starting from row 4
     for i, row := range rows {
-		if i < 3 {
+        if i < 3 {
             continue // skip the first 3 rows
-        }	
+        }
         if len(row) < 4 {
             continue // skip incomplete rows
         }
@@ -57,8 +59,19 @@ func main() {
             amount = abono
         }
 
+        // Split the concept into PAYEE and DESC
+        payee := ""
+        desc := ""
+        parts := strings.SplitN(concept, "/", 2)
+        if len(parts) > 0 {
+            payee = strings.TrimSpace(parts[0])
+        }
+        if len(parts) > 1 {
+            desc = strings.TrimSpace(parts[1])
+        }
+
         // Write to CSV
-        if err := csvWriter.Write([]string{date, concept, amount}); err != nil {
+        if err := csvWriter.Write([]string{date, payee, desc, amount}); err != nil {
             log.Fatalf("Failed to write to CSV: %s\n", err)
         }
     }
