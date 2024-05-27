@@ -2,36 +2,42 @@ package main
 
 import (
     "encoding/csv"
+    "flag"
     "fmt"
     "log"
     "os"
+    "strconv"
     "strings"
 
     "github.com/xuri/excelize/v2"
 )
 
 func main() {
-    if len(os.Args) < 3 {
-        log.Fatalf("Usage: %s <input.xlsx> <output.csv>\n", os.Args[0])
+    inputFile := flag.String("input", "", "Path to the input Excel file")
+    outputFile := flag.String("output", "", "Path to the output CSV file")
+    creditCardMode := flag.Bool("cc", false, "Enable credit card mode (amounts will be negative)")
+
+    flag.Parse()
+
+    if *inputFile == "" || *outputFile == "" {
+        log.Fatalf("Usage: %s -input <input.xlsx> -output <output.csv> [-cc]\n", os.Args[0])
     }
 
-    inputFile := os.Args[1]
-    outputFile := os.Args[2]
-
     // Open the Excel file
-    f, err := excelize.OpenFile(inputFile)
+    f, err := excelize.OpenFile(*inputFile)
     if err != nil {
         log.Fatalf("Failed to open Excel file: %s\n", err)
     }
 
-    // Read the rows from the first sheet
-    rows, err := f.GetRows(f.GetSheetName(0))
+    // Determine the format of the Excel file and process accordingly
+    sheetName := f.GetSheetName(0)
+    rows, err := f.GetRows(sheetName)
     if err != nil {
         log.Fatalf("Failed to read rows: %s\n", err)
     }
 
     // Open the CSV file for writing
-    csvFile, err := os.Create(outputFile)
+    csvFile, err := os.Create(*outputFile)
     if err != nil {
         log.Fatalf("Failed to create CSV file: %s\n", err)
     }
@@ -40,14 +46,21 @@ func main() {
     csvWriter := csv.NewWriter(csvFile)
     defer csvWriter.Flush()
 
-    // Process and write the rows starting from row 4
+    // Process the rows
+    processRows(rows, csvWriter, *creditCardMode)
+
+    fmt.Println("CSV file created successfully:", *outputFile)
+}
+
+func processRows(rows [][]string, csvWriter *csv.Writer, creditCardMode bool) {
     for i, row := range rows {
-        if i < 3 {
-            continue // skip the first 3 rows
+        if i == 0 {
+            continue // skip the header row
         }
-        if len(row) < 4 {
-            continue // skip incomplete rows
+        if len(row) < 4 || isDividerRow(row) {
+            continue // skip incomplete or divider rows
         }
+
         date := row[0]
         concept := row[1]
         cargo := row[2]
@@ -57,6 +70,16 @@ func main() {
         amount := cargo
         if cargo == "" {
             amount = abono
+        }
+
+        // Remove commas and parse the amount
+        amount = strings.ReplaceAll(amount, ",", "")
+        amountFloat, err := strconv.ParseFloat(amount, 64)
+        if err == nil {
+            if creditCardMode {
+                amountFloat = -amountFloat
+            }
+            amount = fmt.Sprintf("%.2f", amountFloat) // Ensure two decimal places
         }
 
         // Split the concept into PAYEE and DESC
@@ -75,6 +98,18 @@ func main() {
             log.Fatalf("Failed to write to CSV: %s\n", err)
         }
     }
+}
 
-    fmt.Println("CSV file created successfully:", outputFile)
+func isDividerRow(row []string) bool {
+    // A divider row typically has a unique pattern, such as a single non-empty cell
+    if len(row) == 0 {
+        return false
+    }
+    nonEmptyCells := 0
+    for _, cell := range row {
+        if strings.TrimSpace(cell) != "" {
+            nonEmptyCells++
+        }
+    }
+    return nonEmptyCells == 1
 }
